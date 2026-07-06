@@ -47,18 +47,18 @@ const DISPOSITIVOS = ['Android', 'Apple', 'Web']
 
 // --- campanhas Meta fictícias ---
 const META_CAMPAIGNS = [
-  { id: '120001', name: 'FUNDO | Conversão WhatsApp', ads: 4, spendDia: 120, msgRate: 1.0 },
-  { id: '120002', name: 'MEIO | Remarketing Vídeo', ads: 3, spendDia: 65, msgRate: 0.35 },
-  { id: '120003', name: 'TOPO | Reconhecimento', ads: 3, spendDia: 45, msgRate: 0.1 },
+  { id: '120001', name: 'FUNDO | Conversão WhatsApp', ads: 4, spendDia: 240, msgRate: 1.0 },
+  { id: '120002', name: 'MEIO | Remarketing Vídeo', ads: 3, spendDia: 130, msgRate: 0.35 },
+  { id: '120003', name: 'TOPO | Reconhecimento', ads: 3, spendDia: 90, msgRate: 0.1 },
 ]
 const IG_SHORTCODES = ['DEMOaa1Xy01', 'DEMObb2Xy02', 'DEMOcc3Xy03', 'DEMOdd4Xy04', 'DEMOee5Xy05', 'DEMOff6Xy06', 'DEMOgg7Xy07', 'DEMOhh8Xy08', 'DEMOii9Xy09', 'DEMOjj0Xy10']
 const META_DIAS = 92    // janela de dados sincronizados da Meta (~"últimos 90 dias")
 
 // --- campanhas Google fictícias ---
 const GOOGLE_CAMPAIGNS = [
-  { id: '21001', name: 'Pesquisa | Marca', channel: 'SEARCH', costDia: 18 },
-  { id: '21002', name: 'Pesquisa | Tratamentos', channel: 'SEARCH', costDia: 34 },
-  { id: '21003', name: 'PMax | Clínica', channel: 'PERFORMANCE_MAX', costDia: 12 },
+  { id: '21001', name: 'Pesquisa | Marca', channel: 'SEARCH', costDia: 36 },
+  { id: '21002', name: 'Pesquisa | Tratamentos', channel: 'SEARCH', costDia: 68 },
+  { id: '21003', name: 'PMax | Clínica', channel: 'PERFORMANCE_MAX', costDia: 24 },
 ]
 const GOOGLE_KEYWORDS = [
   'clinica estetica zona sul', 'botox preço', 'preenchimento labial', 'ultraformer',
@@ -91,6 +91,21 @@ function telefoneFake(rng) {
   const ddd = pick(rng, ['21', '21', '21', '11', '22', '24'])
   return `55${ddd}9000${String(rint(rng, 0, 9999)).padStart(4, '0')}`
 }
+
+// Tempo (horas) da criação do lead até o agendamento. Distribuição front-loaded:
+// a IA responde no WhatsApp em segundos e a maioria agenda em minutos. A cauda
+// (>4h / dias) é dos leads que voltam depois de pensar. Espelha os baldes do
+// gráfico "Distribuição de Tempo para Agendar" (getTempoFaixas).
+function tempoAgendar(rng) {
+  const r = rng()
+  if (r < 0.30) return range(rng, 0.03, 0.25)   // < 15 min
+  if (r < 0.48) return range(rng, 0.25, 0.5)    // 15–30 min
+  if (r < 0.63) return range(rng, 0.5, 1)       // 30 min – 1h
+  if (r < 0.75) return range(rng, 1, 2)         // 1–2h
+  if (r < 0.84) return range(rng, 2, 4)         // 2–4h
+  if (r < 0.92) return range(rng, 4, 20)        // > 4h (ainda no mesmo dia)
+  return range(rng, 26, 140)                    // 1–6 dias (decidiu depois)
+}
 const chatLink = id => `https://example.com/chat/${id}`
 
 // ============================================================================
@@ -106,10 +121,11 @@ export function getMockLeads() {
   for (let d = LEADS_DIAS; d >= 0; d--) {
     const diaMs = hojeMs - d * DIA_MS
     const dow = new Date(diaMs).getUTCDay()
-    // volume cresce ao longo do ano (3 → 8,5 leads/dia), mais fraco no fim de semana
-    const base = 3 + 5.5 * ((LEADS_DIAS - d) / LEADS_DIAS)
+    // volume cresce ao longo do ano (~8 → ~18 leads/dia), mais fraco no fim de semana.
+    // Ruído absoluto modesto: em volume maior a curva fica mais suave (menos "picotada").
+    const base = 8 + 10 * ((LEADS_DIAS - d) / LEADS_DIAS)
     const fimDeSemana = dow === 0 || dow === 6 ? 0.45 : 1
-    const n = Math.max(0, Math.round(base * fimDeSemana + range(rng, -1.2, 1.6)))
+    const n = Math.max(0, Math.round(base * fimDeSemana + range(rng, -1.8, 2.2)))
 
     for (let i = 0; i < n; i++) {
       id++
@@ -164,11 +180,7 @@ export function getMockLeads() {
       if (agendou) {
         stage_pipeline = 'Agendado'
         status_agendado = true
-        // tempo até agendar: 70% no mesmo dia, 30% em 1–6 dias
-        const mesmoDia = chance(rng, 0.7)
-        tempo_medio_agendamento_em_horas = mesmoDia
-          ? Math.round(range(rng, 0.1, 9) * 100) / 100
-          : Math.round(range(rng, 26, 140) * 100) / 100
+        tempo_medio_agendamento_em_horas = Math.round(tempoAgendar(rng) * 100) / 100
         const agendouMs = createdMs + tempo_medio_agendamento_em_horas * 3600000
         quando_agendou = iso(agendouMs)
         // consulta 2–21 dias após o agendamento
@@ -416,11 +428,11 @@ const CAT_BASICO = [0, 1, 2, 9, 10, 11, 12]
 
 // bandas de valor: [nº pacientes, alvo de pico 12m (min, max), compras no pico]
 const BANDAS = [
-  { n: 6, vp: [105000, 180000], nPico: [8, 14], extraAnos: 3 },   // Unique
-  { n: 14, vp: [62000, 98000], nPico: [6, 11], extraAnos: 3 },    // Private
-  { n: 45, vp: [31000, 58000], nPico: [4, 8], extraAnos: 2 },     // Prime
-  { n: 85, vp: [15500, 29000], nPico: [3, 6], extraAnos: 2 },     // Select
-  { n: 370, vp: [400, 14000], nPico: [1, 3], extraAnos: 1 },      // Start
+  { n: 12, vp: [105000, 180000], nPico: [8, 14], extraAnos: 3 },  // Unique
+  { n: 28, vp: [62000, 98000], nPico: [6, 11], extraAnos: 3 },    // Private
+  { n: 90, vp: [31000, 58000], nPico: [4, 8], extraAnos: 2 },     // Prime
+  { n: 170, vp: [15500, 29000], nPico: [3, 6], extraAnos: 2 },    // Select
+  { n: 740, vp: [400, 14000], nPico: [1, 3], extraAnos: 1 },      // Start
 ]
 
 let _vendas = null, _contatos = null, _produtosRows = null, _chatLinks = null
