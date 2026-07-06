@@ -52,7 +52,7 @@ const META_CAMPAIGNS = [
   { id: '120003', name: 'TOPO | Reconhecimento', ads: 3, spendDia: 45, msgRate: 0.1 },
 ]
 const IG_SHORTCODES = ['DEMOaa1Xy01', 'DEMObb2Xy02', 'DEMOcc3Xy03', 'DEMOdd4Xy04', 'DEMOee5Xy05', 'DEMOff6Xy06', 'DEMOgg7Xy07', 'DEMOhh8Xy08', 'DEMOii9Xy09', 'DEMOjj0Xy10']
-const META_DIAS = 150   // janela de dados sincronizados da Meta
+const META_DIAS = 92    // janela de dados sincronizados da Meta (~"últimos 90 dias")
 
 // --- campanhas Google fictícias ---
 const GOOGLE_CAMPAIGNS = [
@@ -71,7 +71,7 @@ const GOOGLE_TERMS_EXTRA = [
   'ultraformer mpt vale a pena', 'laser para manchas no rosto', 'harmonizacao facial preço',
   'sculptra quantas sessoes', 'clinica flow avaliações',
 ]
-const GOOGLE_DIAS = 120 // janela de dados sincronizados do Google
+const GOOGLE_DIAS = 92  // janela de dados sincronizados do Google (~"últimos 90 dias")
 
 const LEADS_DIAS = 365
 const LEADS_SEED = 20260101
