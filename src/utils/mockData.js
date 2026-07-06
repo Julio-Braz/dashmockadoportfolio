@@ -17,7 +17,10 @@ function mulberry32(seed) {
 }
 
 const DIA_MS = 86400000
-const HOJE = (() => { const d = new Date(); d.setHours(12, 0, 0, 0); return d })()
+// Âncora do dia em meia-noite UTC: assim a hora de criação (0–23) nunca "rola"
+// para o dia UTC seguinte, mantendo o dia da semana coerente entre created_at,
+// quando_agendou e o volume diário (senão o Golden Day sai embaralhado).
+const HOJE = (() => { const d = new Date(); d.setUTCHours(0, 0, 0, 0); return d })()
 const hojeMs = HOJE.getTime()
 const iso = ms => new Date(ms).toISOString().slice(0, 10)
 
@@ -106,6 +109,20 @@ function tempoAgendar(rng) {
   if (r < 0.92) return range(rng, 4, 20)        // > 4h (ainda no mesmo dia)
   return range(rng, 26, 140)                    // 1–6 dias (decidiu depois)
 }
+
+// Hora (0–23) em que a IA registrou o agendamento. Sino diurno com pico no fim
+// da manhã e meio da tarde, e uma cauda de madrugada — a IA atende 24/7, então
+// há conversões fora do horário comercial. Espelha o gráfico "Golden Hour".
+const HORA_AGEND_PESOS = [
+  2.2, 2.0, 1.2, 0.6, 0.5, 0.8, 1.6, 4, 8, 12, 15, 16,   // 0h..11h
+  11, 12, 14, 12, 11, 9, 7, 6, 5, 4, 3, 2.2,             // 12h..23h
+]
+const HORA_AGEND_TOTAL = HORA_AGEND_PESOS.reduce((s, x) => s + x, 0)
+function horaAgendamento(rng) {
+  let r = rng() * HORA_AGEND_TOTAL
+  for (let h = 0; h < 24; h++) { r -= HORA_AGEND_PESOS[h]; if (r <= 0) return h }
+  return 14
+}
 const chatLink = id => `https://example.com/chat/${id}`
 
 // ============================================================================
@@ -118,14 +135,32 @@ export function getMockLeads() {
   const leads = []
   let id = 1000
 
+  // Volume diário como CURVA SUAVE. Três componentes:
+  //  1) tendência de crescimento (~8 → ~18 leads/dia ao longo do ano);
+  //  2) ritmo semanal (Seg/Qui puxam, fim de semana cai) — dá a irregularidade
+  //     natural do "Golden Day" em vez de barras chapadas;
+  //  3) onda autocorrelacionada AR(1): o volume de hoje herda 80% do de ontem,
+  //     então a série forma ondas de vários dias em vez de picos diários
+  //     independentes — era isso que deixava a linha "serrilhada".
+  // Efeito semanal suave (Seg/Qui puxam, fim de semana cai um pouco). Mantido
+  // ameno de propósito: assim a evolução diária continua com ondas arredondadas
+  // (sem dente-de-serra), mas o padrão ainda se acumula no Golden Day ao longo
+  // do ano (52 semanas → picos claros de Seg/Qui).
+  const DOW_MULT = [0.7, 1.12, 1.04, 0.9, 1.08, 0.96, 0.74] // Dom..Sáb
+  const dailyVolume = []
+  let onda = 0
+  for (let d = LEADS_DIAS; d >= 0; d--) {
+    const progresso = (LEADS_DIAS - d) / LEADS_DIAS
+    const tendencia = 8 + 10 * progresso
+    const dow = new Date(hojeMs - d * DIA_MS).getUTCDay()
+    onda = onda * 0.84 + range(rng, -1, 1) * 2.1  // memória ~6 dias → ondas suaves
+    dailyVolume.push(Math.max(1, Math.round((tendencia + onda) * DOW_MULT[dow])))
+  }
+
+  let idx = 0
   for (let d = LEADS_DIAS; d >= 0; d--) {
     const diaMs = hojeMs - d * DIA_MS
-    const dow = new Date(diaMs).getUTCDay()
-    // volume cresce ao longo do ano (~8 → ~18 leads/dia), mais fraco no fim de semana.
-    // Ruído absoluto modesto: em volume maior a curva fica mais suave (menos "picotada").
-    const base = 8 + 10 * ((LEADS_DIAS - d) / LEADS_DIAS)
-    const fimDeSemana = dow === 0 || dow === 6 ? 0.45 : 1
-    const n = Math.max(0, Math.round(base * fimDeSemana + range(rng, -1.8, 2.2)))
+    const n = dailyVolume[idx++]
 
     for (let i = 0; i < n; i++) {
       id++
@@ -189,8 +224,9 @@ export function getMockLeads() {
         // horário comercial com "golden hour" no fim da manhã / meio da tarde
         const hCons = pick(rng, [9, 10, 10, 11, 11, 11, 14, 15, 15, 16, 16, 17])
         horario_agendamento = `${String(hCons).padStart(2, '0')}:${pick(rng, ['00', '20', '40'])}:00`
-        // hora em que o AGENDAMENTO foi feito (IA atende fora do comercial também)
-        const hReal = pick(rng, [8, 9, 10, 10, 11, 11, 12, 13, 14, 15, 15, 16, 17, 18, 19, 20, 21, 22])
+        // hora em que o AGENDAMENTO foi registrado (a IA atende 24/7, incluindo
+        // madrugada e fim de semana — daí conversões fora do horário comercial)
+        const hReal = horaAgendamento(rng)
         hora_agendamento_realizado = `${String(hReal).padStart(2, '0')}:${String(rint(rng, 0, 59)).padStart(2, '0')}:00`
         quem_fez_o_agendamento = chance(rng, 0.78) ? 'IA' : 'Equipe'
 
