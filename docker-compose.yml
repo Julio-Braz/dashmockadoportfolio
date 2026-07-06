@@ -1,0 +1,30 @@
+version: "3.7"
+
+services:
+  dashmockado:
+    image: dashmockado_image:latest
+
+    networks:
+      - AutomatiNet
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.dashmockado-http.rule=Host(`clinicflowdash.automatisales.com.br`)
+        - traefik.http.routers.dashmockado-http.entrypoints=web
+        - traefik.http.routers.dashmockado.rule=Host(`clinicflowdash.automatisales.com.br`)
+        - traefik.http.routers.dashmockado.entrypoints=websecure
+        - traefik.http.routers.dashmockado.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.dashmockado.service=dashmockado
+        - traefik.http.services.dashmockado.loadbalancer.server.port=80
+        - traefik.http.services.dashmockado.loadbalancer.passHostHeader=true
+
+networks:
+  AutomatiNet:
+    external: true
+    name: AutomatiNet
